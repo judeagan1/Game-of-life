@@ -186,7 +186,7 @@ int main(int argc, char* argv[]) {
         int changeGlobal;
         int changeLocal;
 
-        if (ith_iteration >= 1 and world == newWorld){
+        if (ith_iteration > 1 and world == newWorld){
             changeLocal = 0;
         }
         else {
@@ -209,7 +209,6 @@ int main(int argc, char* argv[]) {
     } //end of main loop
 
     //mpi barrier
-    //mpi reduce 
     //mpi gather -- gather to process 0 -- mpi allgather -- optimization
     //mpi_time 
     MPI::Finalize();
