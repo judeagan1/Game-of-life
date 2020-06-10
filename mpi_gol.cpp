@@ -1,5 +1,5 @@
 #include "mpi.h"
-#include "stdc++.h"
+#include "./resources/stdc++.h"
 
 using namespace std;
 
@@ -16,6 +16,7 @@ int main(int argc, char* argv[]) {
     int numRows = atoi(argv[1]);
     int numColumns = atoi(argv[2]);
     int numIterations = atoi(argv[3]);
+
     
 
 
@@ -47,9 +48,7 @@ int main(int argc, char* argv[]) {
     */
     vector<vector<int> > world(numRowsWithBorder, vector<int>(numColumnsWithBorder, 0));
     vector<vector<int> > newWorld(numRowsWithBorder, vector<int>(numColumnsWithBorder, 0));
-    
-  
-
+    vector<vector<int> > wholeWorld(numRows, vector<int>(numColumns, 0));
 
     /* 
     the outer loop start at the second row in order to skip the border row
@@ -181,11 +180,15 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        //barrier to make sure that each process finishes before we check to see if the board has changed
         MPI_Barrier(MPI::COMM_WORLD);
+        int changeGlobal; //all of the changeLocal values are summed to this value
+        int changeLocal; //holds the value that tells whether or not the board for a particular process has changed
 
-        int changeGlobal;
-        int changeLocal;
-
+        /*
+        if we have had at least 2 itterations and the board has not changed changeLocal stays at 0
+        if the board has changed, then change local will be set to one and the program will continue 
+        */
         if (ith_iteration >= 1 and world == newWorld){
             changeLocal = 0;
         }
@@ -193,25 +196,34 @@ int main(int argc, char* argv[]) {
             changeLocal = 1;
         }
 
+        //sums all of the changeLocal values to changeGlobal
         MPI_Reduce(&changeLocal, &changeGlobal, 1, MPI::INT, MPI::SUM, 0, MPI::COMM_WORLD);
 
-        if (changeGlobal >= 1){
-            for (auto ith_row = 1; ith_row <= numRowsLocal; ith_row++) {
-                for (auto ith_column = 1; ith_column <= numColumns; ith_column++){
-                    world[ith_row][ith_column] = newWorld[ith_row][ith_column];
-            }
-        }
-        }
-        else{
+        /* 
+        if changeGlobal >= 1, meaning that at least one process had a change, 
+        then we just set world = newWorld and move to next itteration.
+        If the changeGlobal stayed equal to zero, then no section of the board changed,
+        so the program terminates.
+        */
+        if (changeGlobal == 0){
+            cout << "\n\n" << "The program has terminated early because there were no changes between iterations." << endl;
             MPI_Abort(MPI::COMM_WORLD, 1);
         }
+
+        for (auto ith_row = 1; ith_row <= numRowsLocal; ith_row++) {
+            for (auto ith_column = 1; ith_column <= numColumns; ith_column++){
+                world[ith_row][ith_column] = newWorld[ith_row][ith_column];
+            }   
+        }
+        
     
     } //end of main loop
 
-    //mpi barrier
-    //mpi reduce 
+    //mpi barrier -- done 
+    //mpi reduce -- done (but maybe not working?)
     //mpi gather -- gather to process 0 -- mpi allgather -- optimization
     //mpi_time 
+
     MPI::Finalize();
     return 0;
 }
