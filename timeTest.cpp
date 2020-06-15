@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) {
     }
 
     MPI_Gather(&individualTime, 1, MPI::DOUBLE, sendarray, 1, MPI::DOUBLE, mpiroot, MPI::COMM_WORLD); 
-    MPI_Reduce(&individualTime, &totalTime, 1, MPI::DOUBLE, MPI::SUM, 0, MPI::COMM_WORLD);
+    MPI_Reduce(&individualTime, &totalTime, 1, MPI::DOUBLE, MPI::MAX, 0, MPI::COMM_WORLD);
 
     if (mpirank == 0){
 

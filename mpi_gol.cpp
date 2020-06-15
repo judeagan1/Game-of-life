@@ -18,9 +18,9 @@ int main(int argc, char* argv[]) {
     int numIterations = atoi(argv[3]);
     MPI_Request request, request2, request3;
     MPI_Status status, status2, status3;
-
-    
-
+    double compTime[10], commTime[10];
+    double compT1, compT2, compT3, compT4, compT5, compT6;
+    double commT1, commT2, commT3, commT4, commT5, commT6;
 
     if (argc != 4){
         cout << "4 process minimum" << endl;
@@ -33,7 +33,13 @@ int main(int argc, char* argv[]) {
     }
     
 
-    //numRowsLocal is the amount of rows held be each process. If we have 5 rows, and are performing 5 processes, then each proc will be handling 1 row
+    /*
+    numRowsLocal is the amount of rows held by each process. If we have 10 rows, and are 
+    performing 5 processes, then each proc will be handling 2 rows.
+    So there is not 1 large board. Each process randomly generates its own 2 row board.
+    The processes then communicate with each other to make generations operate correctly.
+    Finally, we print the boards out 1 process at a time, in order.
+    */
     auto numRowsLocal = numRows / mpisize;
     if (mpirank == mpisize - 1){
         numRowsLocal += numRows % mpisize; //put remaining rows on the last rank
@@ -46,11 +52,10 @@ int main(int argc, char* argv[]) {
     world is a 2d-vector of ints
     the x-axis is the number of rows with our "ghost rows" 
     the y-axis is the number of columns with border 
-    newWorld is identical to the initial world, but will be used for updating 
+    newWorld is identical to the initial world, but will be used for updating
     */
     vector<vector<int> > world(numRowsWithBorder, vector<int>(numColumnsWithBorder, 0));
     vector<vector<int> > newWorld(numRowsWithBorder, vector<int>(numColumnsWithBorder, 0));
-    vector<vector<int> > wholeWorld(numRows, vector<int>(numColumns, 0));
 
     /* 
     the outer loop start at the second row in order to skip the border row
@@ -75,7 +80,7 @@ int main(int argc, char* argv[]) {
     
     // main loop where life cycle is performed
     for (auto ith_iteration = 0; ith_iteration < numIterations; ith_iteration++) {
-        
+        commT1 = MPI::Wtime();
         //ghost rows
         //send top row to rank above
         MPI_Isend(&world[1][0], numColumnsWithBorder, MPI::INT, neighborAbove, 0, MPI::COMM_WORLD, &request);
@@ -83,17 +88,17 @@ int main(int argc, char* argv[]) {
         //send bottom row to rank bellow
         MPI_Isend(&world[numRowsLocal][0], numColumnsWithBorder, MPI::INT, neighborBelow, 0, MPI::COMM_WORLD, &request2);
 
-     
-        
         //recieve bottom row from bellow
         MPI_Irecv(&world[numRowsLocal + 1][0], numColumnsWithBorder, MPI::INT, neighborBelow, 0, MPI::COMM_WORLD, &request);
 
         // recieve top row from above
         MPI_Irecv(&world[0][0], numColumnsWithBorder, MPI::INT, neighborAbove, 0, MPI::COMM_WORLD, &request2);
         
+        //completes sending and recieving for the top and bottom ghost rows
         MPI_Wait(&request, &status);
         MPI_Wait(&request2, &status2);
-    
+        commT2 = MPI::Wtime();
+        commTime.push_back(commT2 - commT1);
 
         /* 
         does not require communication because we are seperating the world by row
@@ -115,9 +120,8 @@ int main(int argc, char* argv[]) {
         
         //start the printing process by showing which cycle we are printing
         if (mpirank == mpiroot){
-            cout << "\n\n" << "iteration: " << ith_iteration + 1 << endl;
+            cout << "\n" << "iteration: " << ith_iteration + 1 << endl;
 
-            bool stayedTheSame = true;
             //this prints out only the data assigned to the root rank
             for (auto ith_row = 1; ith_row <= numRowsLocal; ith_row++){
                 for (auto ith_column = 1; ith_column <= numColumns; ith_column++){
@@ -144,7 +148,7 @@ int main(int argc, char* argv[]) {
                 vector<int> recvDataHolder(numColumns, 0);
                 for (auto ith_recv = 0; ith_recv < numRecieved; ith_recv++){
                     MPI_Irecv(&recvDataHolder[0], numColumns, MPI::INT, fromRank, 0, MPI::COMM_WORLD, &request3);
-                    MPI_Wait(&request3, &status3);
+                    MPI_Wait(&request3, &status3); // completes the send and recieve of the data from each process
 
                     // print each number recieved and held inside of recvDataHolder 
                     for (auto i : recvDataHolder){
@@ -154,7 +158,6 @@ int main(int argc, char* argv[]) {
                         else {
                             cout << "." << " ";
                         }
-    
                     }
                     cout << endl;
                 }
@@ -178,6 +181,13 @@ int main(int argc, char* argv[]) {
                     } 
                 }
 
+                /*
+                if we have had at least 2 itterations and the board has not changed changeLocal stays at 0
+                if the board has changed, then change local will be set to one and the program will continue 
+                */
+                if (world[ith_row][ith_column] == living and (numLivingNeighbors > 3 or numLivingNeighbors < 2)){
+                    changeLocal = 1;
+                }
 
                 /* 
                 after counting up the total number of living neighbors we perform the main logic of the game of life:
@@ -186,11 +196,6 @@ int main(int argc, char* argv[]) {
                 3. Any live cell with more than three live neighbours dies, as if by overpopulation.
                 4. Any dead cell with exactly three live neighbours becomes a live cell, as if by reproduction.
                 */
-
-                if (ith_iteration >= 1 and world[ith_row][ith_column] == living and (numLivingNeighbors > 3 or numLivingNeighbors < 2)){
-                    changeLocal = 1;
-                }
-
                 if (numLivingNeighbors < 2){
                     newWorld[ith_row][ith_column] = dead;
                 }
@@ -207,11 +212,6 @@ int main(int argc, char* argv[]) {
 
             }
         }
-
-        /*
-        if we have had at least 2 itterations and the board has not changed changeLocal stays at 0
-        if the board has changed, then change local will be set to one and the program will continue 
-        */
 
         //sums all of the changeLocal values to changeGlobal
         MPI_Allreduce(&changeLocal, &changeGlobal, 1, MPI::INT, MPI::SUM, MPI::COMM_WORLD);
@@ -232,8 +232,6 @@ int main(int argc, char* argv[]) {
                 world[ith_row][ith_column] = newWorld[ith_row][ith_column];
             }   
         }
-        
-    
     } //end of main loop
 
     //mpi reduce -- done (but maybe not working?)
